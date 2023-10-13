@@ -39,23 +39,17 @@ with open(os.path.join(args.dataset + '_' + args.train_dir, 'args.txt'), 'w') as
 f.close()
 
 if __name__ == '__main__':
-    # global dataset
-    dataset = data_partition(args.dataset, "CDs_and_Vinyl", "Books") # CDs_and_Vinyl Movies_and_TV
+    dataset = data_partition(args.dataset, "CDs_and_Vinyl", "Books")
 
     [user_train1, user_valid1, user_test1, usernum, itemnum1, user_neg1, user_train2, user_valid2, user_test2, itemnum2, user_neg2,
      user_train3, user_valid3, user_test3, itemnum3, user_neg3, time1, time2, time3, category, category_emb, User_Item, Item_User, category_contain] = dataset
-    # print(usernum, itemnum)
-    num_batch = len(user_train1) // args.batch_size  # tail? + ((len(user_train) % args.batch_size) != 0)
+    num_batch = len(user_train1) // args.batch_size
     cc = 0.0
     for u in user_train1:
         cc += len(user_train1[u])
-    # for u in user_valid:
-    #     cc += len(user_valid[u])
-    # for u in user_test:
-    #     cc += len(user_test[u])
     print('average sequence length: %.2f' % (cc / len(user_train1)))
 
-    f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
+    f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log1.9.txt'), 'w')
 
     sampler1 = WarpSampler1(user_train1, user_train2, user_train3, time1, time2, time3, usernum, itemnum1, itemnum2, itemnum3, batch_size=args.batch_size,
                           maxlen=args.maxlen, n_workers=3)
@@ -65,19 +59,14 @@ if __name__ == '__main__':
                             itemnum3, batch_size=args.batch_size,
                             maxlen=args.maxlen, n_workers=3)
     model = SASRec(usernum, itemnum1 + itemnum2 + itemnum3, category, category_emb, User_Item, Item_User, category_contain,
-                   args).to(args.device)  # no ReLU activation in original SASRec implementation?
+                   args).to(args.device)
 
     for name, param in model.named_parameters():
         try:
             torch.nn.init.xavier_normal_(param.data)
-            # print(name)
         except:
-            pass  # just ignore those failed init layers
-
-    # this fails embedding init 'Embedding' object has no attribute 'dim'
-    # model.apply(torch.nn.init.xavier_uniform_)
-
-    model.train()  # enable model training
+            pass
+    model.train()
 
     epoch_start_idx = 1
     if args.state_dict_path is not None:
@@ -85,7 +74,7 @@ if __name__ == '__main__':
             model.load_state_dict(torch.load(args.state_dict_path, map_location=torch.device(args.device)))
             tail = args.state_dict_path[args.state_dict_path.find('epoch=') + 6:]
             epoch_start_idx = int(tail[:tail.find('.')]) + 1
-        except:  # in case your pytorch version is not 1.6 etc., pls debug by pdb if load weights failed
+        except:
             print('failed loading state_dicts, pls check file path: ', end="")
             print(args.state_dict_path)
             print('pdb enabled for your quick check, pls type exit() if you do not need it')
@@ -98,27 +87,24 @@ if __name__ == '__main__':
         t_test = evaluate(model, dataset, args)
         print('test (NDCG@10: %.4f, HR@10: %.4f)' % (t_test[0], t_test[1]))
 
-    # ce_criterion = torch.nn.CrossEntropyLoss()
-    # https://github.com/NVIDIA/pix2pixHD/issues/9 how could an old bug appear again...
-    bce_criterion = torch.nn.BCEWithLogitsLoss()  # torch.nn.BCELoss()
+    bce_criterion = torch.nn.BCEWithLogitsLoss()
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
 
     cl_weights = 0.5
 
     T = 0.0
     t0 = time.time()
-    # torch.autograd.set_detect_anomaly(True)
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
-        if args.inference_only: break  # just to decrease identition
+        if args.inference_only: break
         for step in range(num_batch):  # tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
             A_u, A_seq, A_pos, A_neg, A_seq2, A_mask2, A_seq3, A_mask3 = sampler1.next_batch()  # tuples to ndarray
             A_u, A_seq, A_pos, A_neg, A_seq2, A_mask2, A_seq3, A_mask3 = np.array(A_u), np.array(A_seq), np.array(A_pos), np.array(A_neg), np.array(
                 A_seq2), np.array(A_mask2), np.array(A_seq3), np.array(A_mask3)
-            # print(u.shape, seq.shape, pos.shape, neg.shape)
+
             A_pos_logits, A_neg_logits, A_con_loss1, A_con_loss2, A_con_loss3 = model(A_u, A_seq, A_seq2, A_seq3, A_pos, A_neg, A_mask2, A_mask3, "A")
             A_pos_labels, A_neg_labels = torch.ones(A_pos_logits.shape, device=args.device), torch.zeros(A_neg_logits.shape,
                                                                                                    device=args.device)
-            # print("\neye ball check raw_logits:"); print(pos_logits); print(neg_logits) # check pos_logits > 0, neg_logits < 0
+
             adam_optimizer.zero_grad()
             indices = np.where(A_pos != 0)
             A_loss1 = bce_criterion(A_pos_logits[indices], A_pos_labels[indices])
@@ -126,14 +112,13 @@ if __name__ == '__main__':
             loss = A_loss1 + cl_weights * A_con_loss1 + cl_weights * A_con_loss2 + cl_weights * A_con_loss3
 
             # domain2
-            B_u, B_seq, B_pos, B_neg, B_seq2, B_mask1, B_seq3, B_mask3 = sampler2.next_batch()  # tuples to ndarray
+            B_u, B_seq, B_pos, B_neg, B_seq2, B_mask1, B_seq3, B_mask3 = sampler2.next_batch()
             B_u, B_seq, B_pos, B_neg, B_seq2, B_mask1, B_seq3, B_mask3 = np.array(B_u), np.array(B_seq), np.array(B_pos), np.array(B_neg), np.array(
                 B_seq2), np.array(B_mask1), np.array(B_seq3), np.array(B_mask3)
-            # print(u.shape, seq.shape, pos.shape, neg.shape)
             B_pos_logits, B_neg_logits, B_con_loss1, B_con_loss2, B_con_loss3 = model(B_u, B_seq, B_seq2, B_seq3, B_pos, B_neg, B_mask1, B_mask3, "B")
             B_pos_labels, B_neg_labels = torch.ones(B_pos_logits.shape, device=args.device), torch.zeros(B_neg_logits.shape,
                                                                                                    device=args.device)
-            # print("\neye ball check raw_logits:"); print(pos_logits); print(neg_logits) # check pos_logits > 0, neg_logits < 0
+
             adam_optimizer.zero_grad()
             indices = np.where(B_pos != 0)
             B_loss1 = bce_criterion(B_pos_logits[indices], B_pos_labels[indices])
@@ -141,14 +126,12 @@ if __name__ == '__main__':
             loss += B_loss1 + cl_weights * B_con_loss1 + cl_weights * B_con_loss2 + cl_weights * B_con_loss3
 
             # domain3
-            C_u, C_seq, C_pos, C_neg, C_seq2, C_mask1, C_seq3, C_mask2 = sampler3.next_batch()  # tuples to ndarray
+            C_u, C_seq, C_pos, C_neg, C_seq2, C_mask1, C_seq3, C_mask2 = sampler3.next_batch()
             C_u, C_seq, C_pos, C_neg, C_seq2, C_mask1, C_seq3, C_mask2 = np.array(C_u), np.array(C_seq), np.array(C_pos), np.array(C_neg), np.array(
                 C_seq2), np.array(C_mask1), np.array(C_seq3), np.array(C_mask2)
-            # print(u.shape, seq.shape, pos.shape, neg.shape)
             C_pos_logits, C_neg_logits, C_con_loss1, C_con_loss2, C_con_loss3 = model(C_u, C_seq, C_seq2, C_seq3, C_pos, C_neg, C_mask1, C_mask2, "C")
             C_pos_labels, C_neg_labels = torch.ones(C_pos_logits.shape, device=args.device), torch.zeros(C_neg_logits.shape,
                                                                                                    device=args.device)
-            # print("\neye ball check raw_logits:"); print(pos_logits); print(neg_logits) # check pos_logits > 0, neg_logits < 0
             adam_optimizer.zero_grad()
             indices = np.where(C_pos != 0)
             C_loss1 = bce_criterion(C_pos_logits[indices], C_pos_labels[indices])
@@ -158,10 +141,8 @@ if __name__ == '__main__':
             for param in model.item_emb.parameters(): loss += args.l2_emb * torch.norm(param)
             loss.backward()
             adam_optimizer.step()
-            # print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item())) # expected 0.4~0.6 after init few epochs
 
-        # if (epoch % 20 == 0 and epoch > 400) or epoch % 100 == 0:
-        if (epoch % 10 == 0 and epoch > 450) or epoch == 10:
+        if (epoch % 20 == 0 and epoch > 400) or epoch == 10:
             model.eval()
             t1 = time.time() - t0
             T += t1
