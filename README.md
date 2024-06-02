@@ -8,7 +8,7 @@ We implement our HGTL with an adaption code from the published code of [SASRec](
 We will release the full version of this project in the future.
 
 ## Usage
-To train HGTL, try the script given in project.
+To train HGTL, (1) download the pretrained model "Bert-Base-Uncased" from https://huggingface.co/, and (2) try the script given in project.
 ```
 $ bash train.sh
 ```
